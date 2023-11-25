@@ -2,10 +2,10 @@ provider "aws" {
   region = "us-east-2"
 }
 
-resource "aws_instance" "example" {
-  ami                    = "ami-0c55b159cbfafe1f0"
-  instance_type          = "t2.micro"
-  vpc_security_group_ids = [aws_security_group.instance.id]
+resource "aws_launch_configuration" "example" {
+  image_id        = "ami-0fb653ca2d3203ac1"
+  instance_type   = "t2.micro"
+  security_groups = [aws_security_group.instance.id]
 
   user_data = <<-EOF
               #!/bin/bash
@@ -13,10 +13,8 @@ resource "aws_instance" "example" {
               nohup busybox httpd -f -p ${var.server_port} &
               EOF
 
-  user_data_replace_on_change = true
-
-  tags = {
-    Name = "terraform-example"
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -36,7 +34,37 @@ variable "server_port" {
   default     = 8080
 }
 
-output "public_ip" {
-  value = aws_instance.example.public_ip
-  description = "The public IP address of the web server"
+# output "public_ip" {
+# value       = aws_instance.example.public_ip
+# description = "The public IP address of the web server"
+# }
+
+output "subnets_ids" {
+  value       = data.aws_subnets.default.ids
+  description = "The subnets IDs within the default VPC"
+}
+
+resource "aws_autoscaling_group" "example" {
+  launch_configuration = aws_launch_configuration.example.name
+  vpc_zone_identifier  = data.aws_subnets.default.ids
+
+  min_size = 2
+  max_size = 10
+
+  tag {
+    key                 = "Name"
+    value               = "terraform-asg-example"
+    propagate_at_launch = true
+  }
+}
+
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
 }
